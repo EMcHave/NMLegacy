@@ -1,0 +1,136 @@
+splin.py
+
+import numpy as np
+import matplotlib.pyplot as plt 
+import interpolation
+import NMclasses
+
+pi = math.pi
+a = -4*pi
+b = 4*pi
+
+
+X = np.linspace(a, b, 500)
+f = lambda x: np.cos(x)
+
+x, y = interpolation.splineInterpolation(f, a, b, 30, 'Normal')
+x1, y1 = interpolation.splineInterpolation(f, a, b, 30, 'Cheb')
+E, N  = interpolation.SPdepN(f, a, b, 4, 34, 'Cheb')
+E1, N1 = interpolation.SPdepN(f, a, b, 4, 34, 'Normal')
+Err, Nl = interpolation.LNdepN(x, f, a, b, 4, 34, 'Normal')
+Err1, Nl1 = interpolation.LNdepN(x, f, a, b, 4, 34, 'Cheb')
+
+ 
+NMclasses.Plots(1, [[x, y], [x1,y1], [X, f(X)]], 'Интерполированный косинус', 'x', 'f(x)', ['Равномерная сетка', 'Сетка Чебышева', "cos(x)"]).build()
+NMclasses.Plots(2, [[N1,E1], [N, E]], 'Зависимость макс. ошибки от числа узлов', 'N', 'Err', ['Равномерная сетка сетка Сплайн', 'Сетка Чебышева Сплайн']).build()
+plt.show()
+
+
+
+
+
+interpolation.py
+
+import numpy as np
+from numpy.polynomial import polynomial as P
+import math
+import matplotlib.pyplot as plt
+import NMclasses
+
+def splineInterpolation(f, a, b, n, typeOfGrid):
+    h = (b-a)/n
+    Xi = list()
+    Yi = list()
+    for i in range(n+1):
+        if typeOfGrid == 'Normal':
+            Xi.append(a+i*h)
+        if typeOfGrid == 'Cheb':
+            xi = (b+a)/2+((b-a)/2)*math.cos(((2*i+1)/(2*n+2))*math.pi)
+            Xi.append(xi)       
+        Yi.append(f(Xi[i]))
+
+    splines = splining(Xi, Yi, n)
+    x = list()
+    y = list()
+
+    for i in range(1, len(splines)):
+        interval = np.linspace(splines[i].xs, splines[i].xf, 20)
+        interval = interval.tolist()
+        x.append(interval)
+        for j in range(20):
+            y.append(np.polyval(splines[i].create(), x[i-1][j]))
+    x = sum(x, [])
+    return x, y
+
+def splining(Xi, Yi, n):
+
+    splines = list()
+    splines.append(NMclasses.spline(0,0,0,0,0,0))
+    for i in range(1, n+1):
+        splines.append(NMclasses.spline(0,0,0,0,0,0))
+        splines[i].a = Yi[i]
+        splines[i].xs = Xi[i-1]
+        splines[i].xf = Xi[i]
+
+    splines[0].c = 0   
+    splines[n].c = 0
+
+    delta = [0 for t in range(n)]
+    lambd = [0 for t in range(n)]
+
+    for i in range(1, n):
+        hi  = Xi[i+1] - Xi[i]
+        hip = Xi[i] - Xi[i-1]
+        B = hip
+        C = 2*(hi+hip)
+        D = hi
+        R = 3*((Yi[i+1]-Yi[i])/hi - (Yi[i]-Yi[i-1])/hip)
+        delta[i] = -D/(B*delta[i-1]+C)
+        lambd[i] = (R - B*lambd[i-1])/(B*delta[i-1]+C)
+
+    for i in range(n-1, 0, -1):
+        splines[i].c = delta[i] * splines[i+1].c + lambd[i]
+
+    for i in range(1, n+1):
+        splines[i].d = (splines[i].c-splines[i-1].c)/(3*(Xi[i]-Xi[i-1]))
+        splines[i].b = (Yi[i] - Yi[i - 1]) / (Xi[i]-Xi[i-1]) + 1/3*(Xi[i]-Xi[i-1])*splines[i-1].c + 2/3*(Xi[i]-Xi[i-1])*splines[i].c
+    return splines
+
+def SPdepN(f, a, b, ns, nf, typeOfGrid):
+    E = list()
+    N = list()
+    for n in range(ns, nf+1):
+        spX, spY = splineInterpolation(f, a, b, n, typeOfGrid)
+        Err = list()
+        F = f(spX)
+        for i in range(len(F)):
+            Err.append(abs(-F[i]+spY[i]))
+        E.append(np.max(Err))
+        N.append(n)
+    return E, N
+
+
+
+
+
+NMclasses.py
+
+import numpy as np
+
+class spline:
+    def __init__(self, a, b, c, d, xs, xf):
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d
+        self.xs = xs
+        self.xf = xf
+    
+    def create(self):
+        p1 = np.poly([self.xf])
+        p2 = np.polymul(p1,p1)
+        p3 = np.polymul(p2, p1)
+        p32 = np.polyadd(self.d*p3, self.c*p2)
+        p321 = np.polyadd(p32, self.b*p1)
+        p3210 = np.polyadd(p321, [self.a])
+        return p3210
